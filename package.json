@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vinext dev -p 3017",
     "build": "vinext build",
+    "build:single": "vite build --config vite.single.config.ts",
     "start": "vinext start -p 3017",
     "lint": "tsc --noEmit",
     "test": "vitest run"
@@ -33,6 +34,7 @@
     "@vitejs/plugin-rsc": "^0.5.30",
     "typescript": "^5.7.2",
     "vite": "^8.1.5",
+    "vite-plugin-singlefile": "^2.3.3",
     "vitest": "^2.1.8"
   }
 }
