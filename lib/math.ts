@@ -49,6 +49,85 @@ export function perceptronUpdate(
   };
 }
 
+export type PerceptronMistake = {
+  index: number;
+  point: LabeledPoint;
+  scoreBefore: number;
+  signedScoreBefore: number;
+  deltaWeights: [number, number];
+  deltaBias: number;
+};
+
+export type PerceptronSimulation = {
+  weights: [number, number];
+  bias: number;
+  updatesApplied: number;
+  lastUpdate: PerceptronMistake | null;
+  nextMistake: PerceptronMistake | null;
+  converged: boolean;
+};
+
+export function simulatePerceptron(
+  points: LabeledPoint[],
+  initialWeights: [number, number],
+  initialBias: number,
+  requestedUpdates: number,
+  learningRate = 0.2,
+): PerceptronSimulation {
+  let weights: [number, number] = [...initialWeights];
+  let bias = initialBias;
+  let cursor = 0;
+  let updatesApplied = 0;
+  let lastUpdate: PerceptronMistake | null = null;
+
+  const findMistake = (): PerceptronMistake | null => {
+    for (let offset = 0; offset < points.length; offset += 1) {
+      const index = (cursor + offset) % points.length;
+      const point = points[index];
+      const scoreBefore =
+        weights[0] * point.x + weights[1] * point.y + bias;
+      if (point.label * scoreBefore <= 0) {
+        return {
+          index,
+          point,
+          scoreBefore,
+          signedScoreBefore: point.label * scoreBefore,
+          deltaWeights: [
+            learningRate * point.label * point.x,
+            learningRate * point.label * point.y,
+          ],
+          deltaBias: learningRate * point.label,
+        };
+      }
+    }
+    return null;
+  };
+
+  while (updatesApplied < requestedUpdates) {
+    const mistake = findMistake();
+    if (!mistake) break;
+    weights = [
+      weights[0] + mistake.deltaWeights[0],
+      weights[1] + mistake.deltaWeights[1],
+    ];
+    bias += mistake.deltaBias;
+    cursor = (mistake.index + 1) % points.length;
+    lastUpdate = mistake;
+    updatesApplied += 1;
+  }
+
+  const nextMistake = findMistake();
+
+  return {
+    weights,
+    bias,
+    updatesApplied,
+    lastUpdate,
+    nextMistake,
+    converged: nextMistake === null,
+  };
+}
+
 export function hingeLoss(score: number, label: -1 | 1): number {
   return Math.max(0, 1 - label * score);
 }

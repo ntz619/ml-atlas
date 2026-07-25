@@ -5,12 +5,14 @@ import { useEffect, useMemo, useState } from "react";
 import MathFormula from "@/components/MathFormula";
 import type { SceneParameters } from "@/components/SceneCanvas";
 import type { SceneInspection } from "@/lib/inspection";
+import { classifierPoints } from "@/lib/learningData";
 import {
   entropy,
   informationGain,
   linearKernel,
   polynomialKernel,
   rbfKernel,
+  simulatePerceptron,
   sigmoid,
 } from "@/lib/math";
 
@@ -171,10 +173,20 @@ function formulaModel(
   }
 
   if (chapter === 2) {
-    const x: [number, number] = [1.25, -1.2];
-    const y = 1;
-    const b = params.bias + params.updateCount * 0.08;
-    const w: [number, number] = [Math.cos(params.angle), Math.sin(params.angle)];
+    const simulation = simulatePerceptron(
+      classifierPoints,
+      [Math.cos(params.angle), Math.sin(params.angle)],
+      params.bias,
+      params.updateCount,
+      0.25,
+    );
+    const next = simulation.nextMistake;
+    const x: [number, number] = next
+      ? [next.point.x, next.point.y]
+      : [1.25, -1.2];
+    const y = next?.point.label ?? 1;
+    const b = simulation.bias;
+    const w = simulation.weights;
     const products = [w[0] * x[0], w[1] * x[1]];
     const score = products[0] + products[1] + b;
     if (step === 0) {
@@ -231,12 +243,16 @@ function formulaModel(
           term("label", "y_i", "Direction", "+1 pulls toward x; −1 pushes away from x.", "Coral is +1 and blue is −1."),
           term("input", "x_i", "Feature-sized correction", "Large coordinates cause larger changes in their corresponding weights.", "The gold-ringed point is the current training example."),
         ],
-        substitution: `w' = w+(${eta})(${y})[${x.join(",")}]`,
-        result: `\\Delta w=[${(eta * x[0]).toFixed(3)},${(eta * x[1]).toFixed(3)}],\\quad \\Delta b=${eta}`,
+        substitution: next
+          ? `w' = w+(${eta})(${y})[${x.join(",")}]`
+          : "y_i(w^\\top x_i+b)>0\\quad\\text{for every sample}",
+        result: next
+          ? `\\Delta w=[${(eta * y * x[0]).toFixed(3)},${(eta * y * x[1]).toFixed(3)}],\\quad \\Delta b=${(eta * y).toFixed(3)}`
+          : "\\text{converged: no update is applied}",
         visualTitle: "One mistake produces one vector correction",
         visualParts: [
           { id: "old", label: "current w", value: "start", magnitude: 0.45, tone: "blue" },
-          { id: "eta", label: "ηyx", value: "correction", magnitude: 0.28, tone: "gold" },
+          { id: "eta", label: "ηyx", value: next ? "correction" : "zero", magnitude: next ? 0.28 : 0.08, tone: "gold" },
           { id: "input", label: "new w", value: "shifted", magnitude: 0.73, tone: "mint" },
         ],
         takeaway: "The update is geometric: rotate/shift the boundary so the mistaken point moves toward the correct side.",

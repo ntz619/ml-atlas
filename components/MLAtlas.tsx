@@ -19,14 +19,15 @@ import MathFormula from "@/components/MathFormula";
 import SceneCanvas, { SceneParameters } from "@/components/SceneCanvas";
 import { chapters } from "@/lib/chapters";
 import type { SceneInspection } from "@/lib/inspection";
-import { entropy, informationGain } from "@/lib/math";
+import { classifierPoints } from "@/lib/learningData";
+import { entropy, informationGain, simulatePerceptron } from "@/lib/math";
 import { useProgressStore } from "@/lib/store";
 
 const defaultParameters: SceneParameters = {
   split: 0,
   complexity: 3,
-  angle: 0,
-  bias: 0,
+  angle: 0.8,
+  bias: 1.2,
   sigmoid: false,
   updateCount: 0,
   margin: 1.8,
@@ -187,6 +188,15 @@ function SceneControls({
   }
 
   if (chapter === 2) {
+    const simulation = simulatePerceptron(
+      classifierPoints,
+      [Math.cos(params.angle), Math.sin(params.angle)],
+      params.bias,
+      params.updateCount,
+      0.25,
+    );
+    const nextMistake = simulation.nextMistake;
+    const lastUpdate = simulation.lastUpdate;
     return (
       <>
         <RangeControl
@@ -196,7 +206,10 @@ function SceneControls({
           max={55}
           step={1}
           unit="°"
-          onChange={(value) => setParam("angle", (value * Math.PI) / 180)}
+          onChange={(value) => {
+            setParam("angle", (value * Math.PI) / 180);
+            setParam("updateCount", 0);
+          }}
         />
         <RangeControl
           label="Bias"
@@ -204,7 +217,10 @@ function SceneControls({
           min={-1.8}
           max={1.8}
           step={0.1}
-          onChange={(value) => setParam("bias", value)}
+          onChange={(value) => {
+            setParam("bias", value);
+            setParam("updateCount", 0);
+          }}
         />
         <Segmented
           label="Activation view"
@@ -218,11 +234,46 @@ function SceneControls({
         <button
           type="button"
           className="lab-action"
+          disabled={!nextMistake}
           onClick={() => setParam("updateCount", params.updateCount + 1)}
         >
-          Apply next mistake update
+          {nextMistake
+            ? `Correct point ${nextMistake.index + 1}`
+            : "Converged — no mistakes remain"}
           <ChevronRight size={16} />
         </button>
+        <div className="update-explainer" aria-live="polite">
+          <span>
+            {nextMistake ? "Next verified mistake" : "Training status"}
+          </span>
+          {nextMistake ? (
+            <>
+              <strong>
+                y·score = {nextMistake.signedScoreBefore.toFixed(3)} ≤ 0
+              </strong>
+              <p>
+                The point is on the wrong side. Click once to apply
+                Δw = ηyx and Δb = ηy with η = 0.25.
+              </p>
+            </>
+          ) : (
+            <>
+              <strong>All 10 samples have y·score &gt; 0</strong>
+              <p>
+                Learning stops because the current plane classifies every
+                training point correctly.
+              </p>
+            </>
+          )}
+          {lastUpdate && (
+            <small>
+              Last correction: point {lastUpdate.index + 1}, Δw = [
+              {lastUpdate.deltaWeights[0].toFixed(2)},{" "}
+              {lastUpdate.deltaWeights[1].toFixed(2)}], Δb ={" "}
+              {lastUpdate.deltaBias.toFixed(2)}.
+            </small>
+          )}
+        </div>
       </>
     );
   }
@@ -353,18 +404,44 @@ function SceneControls({
     );
   }
 
+  const neuralPhaseHelp = [
+    {
+      title: "Inspect the graph",
+      body: "Hover nodes and edges. Nodes hold activations and biases; edges hold trainable weights.",
+    },
+    {
+      title: "Forward · activations move left → right",
+      body: "Blue pulses represent weighted activation contributions. A destination sums them, adds its bias, and activates.",
+    },
+    {
+      title: "Backward · gradients move right → left",
+      body: "Coral pulses represent sensitivity from the loss. The chain rule assigns a gradient to every earlier weight.",
+    },
+    {
+      title: "Update · parameters change locally",
+      body: "Gold markers are not data moving. Each weight and bias is changed using parameter ← parameter − η·gradient.",
+    },
+  ][params.nnPhase];
+
   return (
-    <Segmented
-      label="Signal phase"
-      value={params.nnPhase}
-      options={[
-        { label: "Inspect", value: 0 },
-        { label: "Forward", value: 1 },
-        { label: "Backward", value: 2 },
-        { label: "Update", value: 3 },
-      ]}
-      onChange={(value) => setParam("nnPhase", value)}
-    />
+    <>
+      <Segmented
+        label="Signal phase"
+        value={params.nnPhase}
+        options={[
+          { label: "Inspect", value: 0 },
+          { label: "Forward", value: 1 },
+          { label: "Backward", value: 2 },
+          { label: "Update", value: 3 },
+        ]}
+        onChange={(value) => setParam("nnPhase", value)}
+      />
+      <div className={`phase-explainer phase-${params.nnPhase}`}>
+        <span>Animation key</span>
+        <strong>{neuralPhaseHelp.title}</strong>
+        <p>{neuralPhaseHelp.body}</p>
+      </div>
+    </>
   );
 }
 
@@ -431,7 +508,16 @@ export default function MLAtlas() {
       setParam("complexity", params.complexity >= 8 ? 1 : params.complexity + 1);
     } else if (currentChapter === 2) {
       if (step === 1) setParam("sigmoid", !params.sigmoid);
-      else if (step >= 2) setParam("updateCount", params.updateCount + 1);
+      else if (step >= 2) {
+        const state = simulatePerceptron(
+          classifierPoints,
+          [Math.cos(params.angle), Math.sin(params.angle)],
+          params.bias,
+          params.updateCount,
+          0.25,
+        );
+        setParam("updateCount", state.nextMistake ? params.updateCount + 1 : 0);
+      }
       else setParam("angle", params.angle >= 1.2 ? -0.8 : params.angle + 0.25);
     } else if (currentChapter === 3) {
       setParam("margin", params.margin >= 2.7 ? 0.8 : params.margin + 0.3);
@@ -543,7 +629,7 @@ export default function MLAtlas() {
           </div>
           <div className="scene-badge">
             <i />
-            Live model
+            Hover to explain
           </div>
         </div>
         <SceneCanvas
@@ -733,8 +819,8 @@ export default function MLAtlas() {
             <span className="intro-kicker">ML ATLAS · FIELD LAB 01–08</span>
             <h2>Make the mathematics move.</h2>
             <p>
-              Eight guided laboratories. Manipulate every model, inspect the geometry,
-              and clear one checkpoint to unlock the next idea.
+              Eight guided laboratories. Hover every named object for an explanation,
+              manipulate the model, and clear one checkpoint to unlock the next idea.
             </p>
             <div className="intro-stats">
               <div><strong>08</strong><span>interactive labs</span></div>

@@ -7,6 +7,7 @@ import {
   perceptronUpdate,
   polynomialKernel,
   rbfKernel,
+  simulatePerceptron,
   sigmoidDerivativeFromActivation,
   squaredLoss,
   zeroOneLoss,
@@ -35,6 +36,17 @@ describe("learning mathematics", () => {
         0.5,
       ),
     ).toEqual({ weights: [-1, 0.5], bias: -0.5 });
+  });
+
+  it("applies only verified perceptron mistakes", () => {
+    const points = [
+      { x: -1, y: 0, label: -1 as const },
+      { x: 1, y: 0, label: 1 as const },
+    ];
+    const state = simulatePerceptron(points, [0, 1], 0, 1, 0.2);
+    expect(state.updatesApplied).toBe(1);
+    expect(state.lastUpdate?.signedScoreBefore).toBeLessThanOrEqual(0);
+    expect(state.weights).toEqual([0.2, 1]);
   });
 
   it("distinguishes 0/1 and hinge losses inside the margin", () => {
