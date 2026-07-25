@@ -14,8 +14,8 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { InlineMath } from "react-katex";
 import FormulaWorkbench from "@/components/FormulaWorkbench";
+import MathFormula from "@/components/MathFormula";
 import SceneCanvas, { SceneParameters } from "@/components/SceneCanvas";
 import { chapters } from "@/lib/chapters";
 import type { SceneInspection } from "@/lib/inspection";
@@ -618,7 +618,7 @@ export default function MLAtlas() {
               <p>{inspection.role}</p>
               {inspection.math && (
                 <div className="inspection-math">
-                  <InlineMath math={inspection.math} />
+                  <MathFormula math={inspection.math} />
                 </div>
               )}
               {inspection.values && inspection.values.length > 0 && (

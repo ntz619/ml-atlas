@@ -744,6 +744,20 @@ input[type="range"]::-webkit-slider-thumb {
   font-size: 0.78em;
 }
 
+.math-formula-block {
+  display: block;
+  min-width: max-content;
+}
+
+.math-formula-inline {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.math-formula .katex-mathml {
+  display: none !important;
+}
+
 .formula-workbench {
   margin-top: 22px;
   padding-top: 14px;

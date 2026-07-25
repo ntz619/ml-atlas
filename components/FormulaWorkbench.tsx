@@ -2,7 +2,7 @@
 
 import { ArrowRight, Box, MousePointer2, RotateCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { BlockMath, InlineMath } from "react-katex";
+import MathFormula from "@/components/MathFormula";
 import type { SceneParameters } from "@/components/SceneCanvas";
 import type { SceneInspection } from "@/lib/inspection";
 import {
@@ -739,7 +739,7 @@ export default function FormulaWorkbench({
         <small>live values</small>
       </div>
       <div className="formula-card">
-        <BlockMath math={formula} />
+        <MathFormula math={formula} block />
       </div>
       <p className="formula-plain">{model.plain}</p>
 
@@ -751,7 +751,7 @@ export default function FormulaWorkbench({
             className={item.id === active?.id ? "active" : ""}
             onClick={() => selectTerm(item)}
           >
-            <InlineMath math={item.symbol} />
+            <MathFormula math={item.symbol} />
             <span>{item.label}</span>
           </button>
         ))}
@@ -767,10 +767,10 @@ export default function FormulaWorkbench({
 
       <div className="live-equation">
         <span>Substitute the current controls</span>
-        <BlockMath math={model.substitution} />
+        <MathFormula math={model.substitution} block />
         <div className="equation-result">
           <ArrowRight size={14} />
-          <BlockMath math={model.result} />
+          <MathFormula math={model.result} block />
         </div>
       </div>
 
