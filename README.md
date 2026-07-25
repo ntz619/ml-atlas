@@ -4,6 +4,8 @@ An interactive 3D learning experience for decision trees, empirical risk,
 perceptrons, support-vector machines, kernels, regularization, and neural
 networks.
 
+[Open ML Atlas on GitHub Pages](https://ntz619.github.io/ml-atlas/)
+
 ## Open the single-file version
 
 Download `standalone/index.html` and open it directly in a modern browser. It
