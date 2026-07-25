@@ -744,6 +744,323 @@ input[type="range"]::-webkit-slider-thumb {
   font-size: 0.78em;
 }
 
+.formula-workbench {
+  margin-top: 22px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.formula-topline,
+.formula-topline span,
+.formula-experiment,
+.lesson-resources a,
+.term-explanation > span {
+  display: flex;
+  align-items: center;
+}
+
+.formula-topline {
+  justify-content: space-between;
+  margin-bottom: 9px;
+}
+
+.formula-topline span {
+  gap: 6px;
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.formula-topline small {
+  padding: 3px 6px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+  border-radius: 99px;
+  color: var(--muted);
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.formula-workbench .formula-card {
+  margin-top: 0;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 6%, white), #f7f8f5);
+}
+
+.formula-plain {
+  margin: 11px 2px 0;
+  color: #566073;
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.formula-terms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.formula-terms button {
+  min-width: 0;
+  padding: 7px 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #dce1dc;
+  border-radius: 8px;
+  background: white;
+  color: #4d5768;
+  cursor: pointer;
+  transition: 160ms ease;
+}
+
+.formula-terms button:hover,
+.formula-terms button.active {
+  border-color: color-mix(in srgb, var(--accent) 50%, #dce1dc);
+  background: color-mix(in srgb, var(--accent) 7%, white);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.formula-terms .katex {
+  color: var(--accent);
+  font-size: 0.85em;
+}
+
+.formula-terms button span {
+  overflow: hidden;
+  font-size: 8px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.term-explanation {
+  margin-top: 8px;
+  padding: 10px 11px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, #e0e4e0);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 4%, white);
+}
+
+.term-explanation > span {
+  gap: 5px;
+  color: var(--accent);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.term-explanation p {
+  margin: 5px 0;
+  color: #485366;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.term-explanation small {
+  display: block;
+  color: #7b8492;
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.live-equation {
+  margin-top: 10px;
+  padding: 10px;
+  overflow: hidden;
+  border: 1px solid #dde2dd;
+  border-radius: 10px;
+  background: #17213b;
+  color: white;
+}
+
+.live-equation > span {
+  display: block;
+  color: #aeb8c9;
+  font-size: 7px;
+  font-weight: 850;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.live-equation .katex-display {
+  margin: 9px 0 7px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  font-size: 0.66em;
+}
+
+.equation-result {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-top: 7px;
+  border-top: 1px solid rgb(255 255 255 / 12%);
+  color: #9ee1d3;
+}
+
+.equation-result .katex-display {
+  min-width: 0;
+  margin: 0;
+  flex: 1;
+}
+
+.formula-visual {
+  margin-top: 10px;
+  padding: 10px 10px 9px;
+  border: 1px solid #dfe3df;
+  border-radius: 10px;
+  background:
+    linear-gradient(#f7f8f5 1px, transparent 1px) 0 0 / 100% 25%,
+    #fff;
+}
+
+.visual-title {
+  color: #5b6575;
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+}
+
+.visual-bars {
+  height: 86px;
+  margin-top: 8px;
+  display: flex;
+  align-items: end;
+  gap: 5px;
+}
+
+.visual-bars button {
+  position: relative;
+  height: 100%;
+  min-width: 0;
+  padding: 0 2px;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: end;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #586273;
+  cursor: pointer;
+}
+
+.visual-bars button i {
+  width: min(30px, 72%);
+  min-height: 7px;
+  border-radius: 5px 5px 2px 2px;
+  background: #607ce4;
+  opacity: 0.68;
+  transition: height 280ms ease, opacity 160ms ease, transform 160ms ease;
+}
+
+.visual-bars button.coral i {
+  background: #ef6a45;
+}
+
+.visual-bars button.mint i {
+  background: #25a58d;
+}
+
+.visual-bars button.gold i {
+  background: #e3a12f;
+}
+
+.visual-bars button.active i,
+.visual-bars button:hover i {
+  opacity: 1;
+  transform: translateY(-2px);
+}
+
+.visual-bars button strong {
+  position: absolute;
+  top: 1px;
+  max-width: 100%;
+  overflow: hidden;
+  color: #273247;
+  font-size: 8px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.visual-bars button span {
+  width: 100%;
+  margin-top: 4px;
+  overflow: hidden;
+  font-size: 7px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.formula-visual > p {
+  margin: 9px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid #e6e9e5;
+  color: #5b6575;
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.formula-experiment {
+  width: 100%;
+  margin-top: 8px;
+  padding: 9px 10px;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, #dce1dc);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 7%, white);
+  color: var(--accent);
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.formula-experiment:hover {
+  background: color-mix(in srgb, var(--accent) 13%, white);
+}
+
+.lesson-resources {
+  margin-top: 10px;
+  padding-top: 9px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  border-top: 1px dashed #dde1dd;
+}
+
+.lesson-resources > span {
+  width: 100%;
+  color: #89919d;
+  font-size: 7px;
+  font-weight: 850;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.lesson-resources a {
+  gap: 4px;
+  color: var(--accent);
+  font-size: 8px;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.lesson-resources a:hover {
+  text-decoration: underline;
+}
+
 .lesson-callout,
 .inspection-note {
   margin-top: 18px;
@@ -758,6 +1075,32 @@ input[type="range"]::-webkit-slider-thumb {
 .inspection-note {
   border: 1px dashed color-mix(in srgb, var(--accent) 30%, #d5dad5);
   background: white;
+}
+
+.inspection-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.inspection-heading button {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: #f0f2ee;
+  color: #687283;
+  cursor: pointer;
+}
+
+.inspection-note h3 {
+  margin: 6px 0 0;
+  color: var(--ink);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 16px;
+  font-weight: 500;
 }
 
 .lesson-callout span,
@@ -775,6 +1118,67 @@ input[type="range"]::-webkit-slider-thumb {
   color: #596274;
   font-size: 10px;
   line-height: 1.5;
+}
+
+.inspection-math {
+  margin-top: 8px;
+  padding: 7px 8px;
+  overflow-x: auto;
+  border-radius: 6px;
+  background: #f3f5f1;
+  color: var(--ink);
+  font-size: 10px;
+}
+
+.inspection-note dl {
+  margin: 9px 0 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.inspection-note dl div {
+  min-width: 0;
+  padding: 6px 7px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 5%, #f4f5f2);
+}
+
+.inspection-note dt {
+  overflow: hidden;
+  color: #8a929d;
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.inspection-note dd {
+  margin: 3px 0 0;
+  overflow: hidden;
+  color: #29354a;
+  font-size: 9px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspection-note .inspection-context {
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid #e7eae6;
+  color: #465267;
+}
+
+.inspection-note > small {
+  display: block;
+  margin-top: 7px;
+  color: var(--accent);
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1.45;
 }
 
 .checkpoint {

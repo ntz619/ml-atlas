@@ -11,6 +11,8 @@ import {
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Suspense, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+import type { SceneInspection } from "@/lib/inspection";
+import { inspectionHeadline } from "@/lib/inspection";
 import { hingeLoss, signedDistance } from "@/lib/math";
 
 export type SceneParameters = {
@@ -35,8 +37,10 @@ type SceneCanvasProps = {
   step: number;
   params: SceneParameters;
   reducedMotion: boolean;
-  onObjectSelect: (label: string) => void;
+  onObjectSelect: (inspection: SceneInspection) => void;
 };
+
+type SelectInspection = (inspection: SceneInspection) => void;
 
 const BLUE = "#3f65e8";
 const CORAL = "#ef6a45";
@@ -168,11 +172,15 @@ function DecisionPlane({
   bias,
   margin,
   showMargins,
+  onPlaneSelect,
+  onMarginSelect,
 }: {
   angle: number;
   bias: number;
   margin: number;
   showMargins: boolean;
+  onPlaneSelect?: () => void;
+  onMarginSelect?: (direction: -1 | 1) => void;
 }) {
   const normalX = Math.cos(angle);
   const normalZ = Math.sin(angle);
@@ -185,7 +193,15 @@ function DecisionPlane({
 
   return (
     <group>
-      <mesh position={origin} rotation-y={-angle} castShadow>
+      <mesh
+        position={origin}
+        rotation-y={-angle}
+        castShadow
+        onPointerDown={(event) => {
+          event.stopPropagation();
+          onPlaneSelect?.();
+        }}
+      >
         <boxGeometry args={[0.04, 3, 7.5]} />
         <meshStandardMaterial
           color={INK}
@@ -204,6 +220,10 @@ function DecisionPlane({
               origin[2] + normalZ * wallOffset * direction,
             ]}
             rotation-y={-angle}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+              onMarginSelect?.(direction as -1 | 1);
+            }}
           >
             <boxGeometry args={[0.025, 2.6, 7.5]} />
             <meshStandardMaterial
@@ -240,7 +260,7 @@ function ID3Scene({
 }: {
   split: number;
   step: number;
-  onSelect: (label: string) => void;
+  onSelect: SelectInspection;
   reducedMotion: boolean;
 }) {
   const samples = useMemo(
@@ -276,13 +296,48 @@ function ID3Scene({
             position={[sample.x, -0.35, sample.z]}
             label={sample.label}
             onSelect={() =>
-              onSelect(
-                `Sample ${index + 1}: class ${sample.label === 1 ? "coral" : "blue"}`,
-              )
+              onSelect({
+                id: `id3-sample-${index}`,
+                title: `Training sample ${index + 1}`,
+                kind: "Observed example",
+                role: `This ${sample.label === 1 ? "coral (+1)" : "blue (−1)"} label contributes to the class proportions used by entropy.`,
+                context:
+                  step === 0
+                    ? "At the root, ID3 counts this label with every other sample to measure starting uncertainty."
+                    : `The active feature sends this sample to the ${sample.x < 0 ? "left" : "right"} child. Its new neighbors determine that child’s entropy.`,
+                math: "p(c)=\\frac{\\#\\{y_i=c\\}}{|S|}",
+                values: [
+                  { label: "class", value: sample.label === 1 ? "+1 coral" : "−1 blue" },
+                  { label: "branch", value: sample.x < 0 ? "left child" : "right child" },
+                ],
+                tryNext: "Switch the feature and see whether this point changes branch.",
+                accent: sample.label === 1 ? CORAL : BLUE,
+              })
             }
           />
         ))}
-        <mesh position={[0, -0.58, -0.85]}>
+        <mesh
+          position={[0, -0.58, -0.85]}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+            const left = samples.filter((sample) => sample.x < 0);
+            const right = samples.filter((sample) => sample.x >= 0);
+            onSelect({
+              id: "id3-candidate-split",
+              title: split === 0 ? "Candidate feature A" : "Candidate feature B",
+              kind: "Candidate question",
+              role: "This divider represents a yes/no feature test. ID3 scores it by the uncertainty remaining on both sides.",
+              context: "ID3 compares discrete candidate questions and chooses the one with the greatest information gain.",
+              math: "IG=H(S)-\\frac{|S_L|}{|S|}H(S_L)-\\frac{|S_R|}{|S|}H(S_R)",
+              values: [
+                { label: "left branch", value: `${left.length} samples` },
+                { label: "right branch", value: `${right.length} samples` },
+              ],
+              tryNext: "Toggle Feature A/B and compare the live ‘after split’ entropy.",
+              accent: split === 0 ? BLUE : CORAL,
+            });
+          }}
+        >
           <boxGeometry args={[0.035, 0.18, 5.5]} />
           <meshStandardMaterial
             color={split === 0 ? BLUE : CORAL}
@@ -307,7 +362,29 @@ function ID3Scene({
                 radius={0.11}
                 position={node.p}
                 castShadow
-                onPointerDown={() => onSelect(`Decision node ${index + 1}`)}
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                  onSelect({
+                    id: `id3-node-${index}`,
+                    title: node.depth === 0 ? "Root decision" : node.depth === 1 ? "Child decision" : "Leaf prediction",
+                    kind: node.depth === 2 ? "Tree leaf" : "Decision node",
+                    role:
+                      node.depth === 2
+                        ? "A leaf stops splitting and returns the majority class of the samples that reach it."
+                        : "This node contains a subset of the data and asks the remaining feature with maximum information gain.",
+                    context:
+                      node.depth === 0
+                        ? "The root sees the complete training set, so its first question has the largest downstream effect."
+                        : "Recursive ID3 repeats the same entropy comparison inside this smaller subset.",
+                    math: node.depth === 2 ? "\\hat y=\\operatorname{majority}(S_{leaf})" : "A^*=\\arg\\max_A IG(S,A)",
+                    values: [
+                      { label: "depth", value: String(node.depth) },
+                      { label: "status", value: node.depth < step ? "expanded" : node.depth === 2 ? "terminal" : "current frontier" },
+                    ],
+                    tryNext: node.depth === 2 ? "Trace upward to reconstruct the prediction rule." : "Advance the lesson to reveal the next recursion level.",
+                    accent: node.depth === 0 ? INK : node.p[0] < 0 ? BLUE : CORAL,
+                  });
+                }}
               >
                 <meshStandardMaterial
                   color={node.depth === 0 ? INK : node.p[0] < 0 ? BLUE : CORAL}
@@ -359,10 +436,12 @@ function ID3Scene({
 
 function RiskScene({
   complexity,
+  step,
   onSelect,
 }: {
   complexity: number;
-  onSelect: (label: string) => void;
+  step: number;
+  onSelect: SelectInspection;
 }) {
   const train = useMemo(
     () =>
@@ -394,8 +473,47 @@ function RiskScene({
       <RoundedBox args={[7.1, 4.4, 0.16]} radius={0.14} position={[0, 0.75, -0.35]}>
         <meshStandardMaterial color="#f7f8f4" roughness={0.75} />
       </RoundedBox>
-      <Line points={train} color={BLUE} lineWidth={4} />
-      <Line points={validation} color={CORAL} lineWidth={4} />
+      <Line
+        points={train}
+        color={BLUE}
+        lineWidth={4}
+        onPointerDown={(event) => {
+          event.stopPropagation();
+          onSelect({
+            id: "risk-training-curve",
+            title: "Training loss",
+            kind: "Empirical measurement",
+            role: "This curve is the mean loss on examples used to fit the model. It is directly computable and usually falls as capacity rises.",
+            context:
+              step < 2
+                ? "It visualizes empirical risk: an observable proxy for the inaccessible population expectation."
+                : "A low training curve alone does not prove generalization; compare it with held-out validation loss.",
+            math: "\\hat R_{train}(f)=\\frac1n\\sum_i\\ell(f(x_i),y_i)",
+            values: [{ label: "capacity", value: String(complexity) }],
+            tryNext: "Increase capacity and compare this blue curve with the coral validation curve.",
+            accent: BLUE,
+          });
+        }}
+      />
+      <Line
+        points={validation}
+        color={CORAL}
+        lineWidth={4}
+        onPointerDown={(event) => {
+          event.stopPropagation();
+          onSelect({
+            id: "risk-validation-curve",
+            title: "Validation loss",
+            kind: "Held-out estimate",
+            role: "This curve evaluates choices on examples not used for parameter fitting, revealing when extra capacity stops helping.",
+            context: "Its upward bend is evidence of an overfitting gap, not an exact view of the true population risk.",
+            math: "\\hat R_{val}(f)=\\frac1m\\sum_j\\ell(f(x_j),y_j)",
+            values: [{ label: "capacity", value: String(complexity) }],
+            tryNext: "Find the capacity near the bottom of this coral curve.",
+            accent: CORAL,
+          });
+        }}
+      />
       {Array.from({ length: 16 }, (_, index) => {
         const x = -2.8 + index * 0.37;
         const y = 0.15 + Math.sin(index * 2.3) * 0.32;
@@ -403,7 +521,27 @@ function RiskScene({
           <mesh
             key={index}
             position={[x, y, 0.15]}
-            onPointerDown={() => onSelect(`Observed sample ${index + 1}`)}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+              const loss = Math.max(
+                0.04,
+                0.7 - complexity * 0.055 + Math.sin(index * 2.3) * 0.08,
+              );
+              onSelect({
+                id: `risk-sample-${index}`,
+                title: `Observed sample ${index + 1}`,
+                kind: "Finite evidence",
+                role: "This is one term in an empirical average. We know its input, label, and loss because it was observed.",
+                context: "The unknown population contains many possible cases beyond these dots; that is why true generalization error cannot be computed exactly.",
+                math: "\\ell_i=\\ell(f(x_i),y_i)",
+                values: [
+                  { label: "current loss", value: loss.toFixed(3) },
+                  { label: "sample role", value: "1 of 16 terms" },
+                ],
+                tryNext: "Inspect the blue curve to see how all observed losses are summarized.",
+                accent: INK,
+              });
+            }}
           >
             <sphereGeometry args={[0.07, 12, 12]} />
             <meshStandardMaterial color={INK} />
@@ -429,7 +567,7 @@ function PerceptronScene({
 }: {
   params: SceneParameters;
   step: number;
-  onSelect: (label: string) => void;
+  onSelect: SelectInspection;
 }) {
   const adjustedBias = params.bias + params.updateCount * 0.08;
   const weights: [number, number] = [
@@ -439,13 +577,14 @@ function PerceptronScene({
   return (
     <group position={[0, -0.25, 0]}>
       {classData.map((point, index) => {
-        const distance = Math.abs(
-          signedDistance(
-            { x: point.x, y: point.z },
-            weights,
-            adjustedBias,
-          ),
+        const rawScore =
+          weights[0] * point.x + weights[1] * point.z + adjustedBias;
+        const signed = signedDistance(
+          { x: point.x, y: point.z },
+          weights,
+          adjustedBias,
         );
+        const predicted = rawScore >= 0 ? 1 : -1;
         const active =
           step >= 2 &&
           index === params.updateCount % classData.length;
@@ -470,9 +609,33 @@ function PerceptronScene({
                 : 0
             }
             onSelect={() =>
-              onSelect(
-                `Point ${index + 1} · signed distance ${distance.toFixed(2)}`,
-              )
+              onSelect({
+                id: `perceptron-point-${index}`,
+                title: `Point ${index + 1}${active ? " — current update" : ""}`,
+                kind: predicted === point.label ? "Correctly classified sample" : "Perceptron mistake",
+                role:
+                  predicted === point.label
+                    ? "Its score has the same sign as its label, so the classical perceptron makes no update."
+                    : "Its score has the wrong sign. The learning rule adds ηyᵢxᵢ to w and ηyᵢ to b.",
+                context:
+                  step === 1
+                    ? "The hard prediction uses only the score sign; sigmoid mode maps the same score smoothly into (0,1)."
+                    : step >= 2
+                      ? "During mistake-driven learning, only misclassified samples move the plane."
+                      : "The plane is the zero-score set; distance measures how far this sample sits from it.",
+                math: step >= 2 ? "w\\leftarrow w+\\eta y_ix_i" : "s_i=w^\\top x_i+b",
+                values: [
+                  { label: "true label", value: point.label === 1 ? "+1 coral" : "−1 blue" },
+                  { label: "score", value: rawScore.toFixed(3) },
+                  { label: "prediction", value: predicted === 1 ? "+1" : "−1" },
+                  { label: "signed distance", value: signed.toFixed(3) },
+                  ...(params.sigmoid
+                    ? [{ label: "sigmoid", value: (1 / (1 + Math.exp(-rawScore))).toFixed(3) }]
+                    : []),
+                ],
+                tryNext: predicted === point.label ? "Rotate or shift the plane until this sample becomes a mistake." : "Press Update and watch the correction move the boundary.",
+                accent: point.label === 1 ? CORAL : BLUE,
+              })
             }
           />
         );
@@ -482,6 +645,34 @@ function PerceptronScene({
         bias={adjustedBias}
         margin={1}
         showMargins={step >= 3}
+        onPlaneSelect={() =>
+          onSelect({
+            id: "perceptron-hyperplane",
+            title: "Decision hyperplane",
+            kind: "Zero-score geometry",
+            role: "Every point on this plane satisfies wᵀx+b=0. The weight vector is perpendicular to it; the bias shifts it.",
+            context: step >= 2 ? "Each mistaken update changes w or b, so this geometric boundary moves." : "The two open half-spaces correspond to negative and positive predictions.",
+            math: "w^\\top x+b=0",
+            values: [
+              { label: "w", value: `[${weights[0].toFixed(2)}, ${weights[1].toFixed(2)}]` },
+              { label: "b", value: adjustedBias.toFixed(2) },
+            ],
+            tryNext: "Change the angle to rotate w, then change the offset to translate the plane.",
+            accent: INK,
+          })
+        }
+        onMarginSelect={(direction) =>
+          onSelect({
+            id: `perceptron-margin-${direction}`,
+            title: `${direction > 0 ? "Positive" : "Negative"} reference margin`,
+            kind: "Convergence geometry",
+            role: "This wall illustrates clearance from a separating plane. A larger minimum signed distance γ gives a stronger mistake bound.",
+            context: "The perceptron itself does not maximize this margin; the margin appears in its separable-data convergence proof.",
+            math: "\\gamma=\\min_i y_i\\frac{w_*^\\top x_i+b_*}{\\|w_*\\|}",
+            tryNext: "Compare this corridor with the next chapter, where SVM explicitly maximizes it.",
+            accent: direction > 0 ? CORAL : BLUE,
+          })
+        }
       />
     </group>
   );
@@ -490,11 +681,13 @@ function PerceptronScene({
 function SVMScene({
   params,
   soft,
+  step,
   onSelect,
 }: {
   params: SceneParameters;
   soft: boolean;
-  onSelect: (label: string) => void;
+  step: number;
+  onSelect: SelectInspection;
 }) {
   const support = [4, 5, 6];
   return (
@@ -516,13 +709,51 @@ function SVMScene({
             emphasis={!soft && support.includes(index)}
             height={soft ? Math.min(1.8, shownLoss * (0.45 + params.c * 0.1)) : 0}
             onSelect={() =>
-              onSelect(
-                soft
-                  ? `Point ${index + 1} · ${params.lossMode} loss ${shownLoss.toFixed(2)}`
+              onSelect({
+                id: `${soft ? "soft" : "svm"}-point-${index}`,
+                title: `Point ${index + 1}`,
+                kind: soft
+                  ? shownLoss > 0
+                    ? "Margin violation"
+                    : "Safe sample"
                   : support.includes(index)
-                    ? `Point ${index + 1} · active support vector`
-                    : `Point ${index + 1} · inactive constraint (α = 0)`,
-              )
+                    ? "Support vector"
+                    : "Inactive constraint",
+                role: soft
+                  ? params.lossMode === "hinge"
+                    ? "Its stem is max(0, 1−ys): distance still missing before this point clears the correct margin wall."
+                    : "Its stem is 0 or 1 only: this loss records the wrong sign but ignores margin clearance."
+                  : support.includes(index)
+                    ? "This point touches or defines a corridor wall. Its constraint is active and its dual multiplier can be positive."
+                    : "This point has spare clearance outside the corridor. Complementary slackness makes its multiplier αᵢ zero.",
+                context: soft
+                  ? step === 3
+                    ? `C=${params.c.toFixed(1)} scales how strongly this violation competes with a wide margin.`
+                    : `The ${params.lossMode === "hinge" ? "hinge" : "0/1"} view explains how a geometric violation becomes an optimization cost.`
+                  : step >= 2
+                    ? "In the Lagrangian/dual view, sample influence is represented by αᵢ."
+                    : "In the primal geometry, signed score ys must be at least one.",
+                math: soft
+                  ? params.lossMode === "hinge"
+                    ? "\\ell_i=\\max(0,1-y_is_i)"
+                    : "\\ell_i=\\mathbf1[y_is_i\\le0]"
+                  : "y_i(w^\\top x_i+b)\\ge1",
+                values: [
+                  { label: "label", value: point.label === 1 ? "+1 coral" : "−1 blue" },
+                  { label: "raw score", value: score.toFixed(3) },
+                  { label: "signed score ys", value: (point.label * score).toFixed(3) },
+                  ...(soft
+                    ? [
+                        { label: `${params.lossMode} loss`, value: shownLoss.toFixed(3) },
+                        { label: "weighted by C", value: (params.c * shownLoss).toFixed(3) },
+                      ]
+                    : [{ label: "αᵢ", value: support.includes(index) ? "may be > 0" : "0" }]),
+                ],
+                tryNext: soft
+                  ? "Toggle 0/1 versus hinge and compare the same point’s stem."
+                  : "Click a corridor wall, then compare this point with one farther away.",
+                accent: support.includes(index) ? GOLD : point.label === 1 ? CORAL : BLUE,
+              })
             }
           />
         );
@@ -532,6 +763,39 @@ function SVMScene({
         bias={soft ? 0.04 : params.bias * 0.35}
         margin={params.margin}
         showMargins
+        onPlaneSelect={() =>
+          onSelect({
+            id: `${soft ? "soft" : "svm"}-decision-plane`,
+            title: "Decision hyperplane",
+            kind: soft ? "Soft-margin classifier" : "Maximum-margin separator",
+            role: "This central plane is the zero level set. Prediction uses its sign; the two outer planes measure a safety corridor.",
+            context: soft
+              ? "Slack permits points to cross a wall or even this boundary, with violations priced by C."
+              : "The hard-margin primal chooses the feasible plane with the smallest ‖w‖ and therefore the widest corridor.",
+            math: "w^\\top x+b=0",
+            values: [
+              { label: "corridor width", value: params.margin.toFixed(2) },
+              { label: "implied ‖w‖", value: (2 / params.margin).toFixed(2) },
+            ],
+            tryNext: "Change corridor width and watch the reciprocal weight norm in the equation microscope.",
+            accent: INK,
+          })
+        }
+        onMarginSelect={(direction) =>
+          onSelect({
+            id: `${soft ? "soft" : "svm"}-wall-${direction}`,
+            title: `${direction > 0 ? "+1 coral" : "−1 blue"} corridor wall`,
+            kind: "Margin hyperplane",
+            role: `Points on this wall have functional score ${direction > 0 ? "+1" : "−1"}. The central plane is halfway between the two walls.`,
+            context: soft
+              ? "A point may enter this corridor by using slack ξᵢ; its shortfall becomes hinge loss."
+              : "A hard-margin solution requires every correctly labeled point to stay on or beyond its matching wall.",
+            math: `w^\\top x+b=${direction > 0 ? "1" : "-1"}`,
+            values: [{ label: "distance from center", value: (params.margin / 2).toFixed(2) }],
+            tryNext: "Click the nearest sample to see why it becomes a support vector.",
+            accent: direction > 0 ? CORAL : BLUE,
+          })
+        }
       />
     </group>
   );
@@ -539,10 +803,12 @@ function SVMScene({
 
 function KernelScene({
   params,
+  step,
   onSelect,
 }: {
   params: SceneParameters;
-  onSelect: (label: string) => void;
+  step: number;
+  onSelect: SelectInspection;
 }) {
   const points = useMemo(
     () =>
@@ -578,15 +844,52 @@ function KernelScene({
             label={point.label}
             height={height}
             onSelect={() =>
-              onSelect(
-                `${point.label === 1 ? "Outer" : "Inner"} sample · φ-height ${height.toFixed(2)}`,
-              )
+              onSelect({
+                id: `kernel-point-${index}`,
+                title: `${point.label === 1 ? "Outer-ring" : "Inner-ring"} sample`,
+                kind: "Mapped training example",
+                role: `The input coordinates stay fixed on the floor; the ${params.kernel} feature map gives this point a height of ${height.toFixed(2)}.`,
+                context:
+                  step === 0
+                    ? "The rings are not linearly separable on the floor, but their different radii become separable after lifting."
+                    : step === 3
+                      ? "In the representer expansion, this training point can center one kernel basis function with coefficient αᵢ."
+                      : "The SVM dual compares this point with others through kernel similarities instead of explicit mapped coordinates.",
+                math: step === 3 ? "f(x)=\\sum_i\\alpha_i k(x_i,x)" : "k(x,z)=\\langle\\phi(x),\\phi(z)\\rangle",
+                values: [
+                  { label: "input x", value: `[${point.x.toFixed(2)}, ${point.z.toFixed(2)}]` },
+                  { label: "radius", value: point.radius.toFixed(2) },
+                  { label: "φ-height", value: height.toFixed(2) },
+                  { label: "class", value: point.label === 1 ? "outer +1" : "inner −1" },
+                ],
+                tryNext: "Switch kernels and compare how the same fixed input moves in feature space.",
+                accent: point.label === 1 ? CORAL : BLUE,
+              })
             }
           />
         );
       })}
       {params.lift > 0.15 && params.kernel !== "linear" && (
-        <mesh position={[0, 1.35 * params.lift, 0]}>
+        <mesh
+          position={[0, 1.35 * params.lift, 0]}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+            onSelect({
+              id: "kernel-feature-separator",
+              title: "Feature-space separator",
+              kind: "Linear plane after mapping",
+              role: "This flat plane separates the lifted classes. Projected back to the floor, its decision boundary is nonlinear.",
+              context: "Kernel SVMs keep the optimization linear in feature space without requiring these lifted coordinates to be built explicitly.",
+              math: "w^\\top\\phi(x)+b=0",
+              values: [
+                { label: "kernel", value: params.kernel },
+                { label: "lift", value: params.lift.toFixed(2) },
+              ],
+              tryNext: "Lower the lift to zero to recover the inseparable input-space view.",
+              accent: MINT,
+            });
+          }}
+        >
           <cylinderGeometry args={[3.2, 3.2, 0.035, 64]} />
           <meshStandardMaterial
             color="#ffffff"
@@ -601,10 +904,12 @@ function KernelScene({
 
 function ERMScene({
   params,
+  step,
   onSelect,
 }: {
   params: SceneParameters;
-  onSelect: (label: string) => void;
+  step: number;
+  onSelect: SelectInspection;
 }) {
   const observations = useMemo(
     () =>
@@ -632,7 +937,33 @@ function ERMScene({
       <RoundedBox args={[7, 3.8, 0.15]} radius={0.16} position={[0, 0.35, -0.35]}>
         <meshStandardMaterial color="#f8f8f4" />
       </RoundedBox>
-      <Line points={curve} color={BLUE} lineWidth={5} />
+      <Line
+        points={curve}
+        color={BLUE}
+        lineWidth={5}
+        onPointerDown={(event) => {
+          event.stopPropagation();
+          onSelect({
+            id: "erm-model-curve",
+            title: "Candidate prediction function",
+            kind: "Model selected by the objective",
+            role: "The blue curve supplies f(x) for every observation. Its shape changes the data-fit loss and its complexity penalty together.",
+            context:
+              step < 2
+                ? "Maximum likelihood and negative log-likelihood are two order-equivalent ways to choose these parameters."
+                : step === 2
+                  ? "Each vertical gap from this curve to a coral target becomes a squared residual."
+                  : "Regularized ERM may prefer a smoother curve even when a wigglier one has lower training error.",
+            math: step === 3 ? "\\hat f=\\arg\\min_f[\\hat R(f)+\\lambda\\Omega(f)]" : "\\hat y=f(x)",
+            values: [
+              { label: "capacity", value: String(params.complexity) },
+              { label: "regularization λ", value: params.regularization.toFixed(2) },
+            ],
+            tryNext: "Move regularization and watch the curve trade wiggles for smoothness.",
+            accent: BLUE,
+          });
+        }}
+      />
       {observations.map((point, index) => {
         const fit =
           0.7 * Math.sin(point.x) +
@@ -644,9 +975,34 @@ function ERMScene({
           <group key={index}>
             <mesh
               position={[point.x, point.y, 0.1]}
-              onPointerDown={() =>
-                onSelect(`Observation ${index + 1} · squared residual ${(residual ** 2).toFixed(3)}`)
-              }
+              onPointerDown={(event) => {
+                event.stopPropagation();
+                onSelect({
+                  id: `erm-observation-${index}`,
+                  title: `Observation ${index + 1}`,
+                  kind: "Target and residual",
+                  role:
+                    step === 0
+                      ? "This target contributes one conditional-likelihood factor under the current model."
+                      : step === 1
+                        ? "After taking the negative log, this observation contributes one additive loss term."
+                        : "The vertical residual is squared, so its sign disappears and large gaps receive disproportionate cost.",
+                  context:
+                    step === 3
+                      ? "Regularized ERM balances this data-fit contribution against a global complexity penalty."
+                      : "Under fixed-variance Gaussian noise, minimizing negative log-likelihood gives exactly this squared-error geometry up to constants.",
+                  math: step < 2 ? "-\\log p(y_i\\mid x_i,\\theta)" : "\\ell_i=(y_i-f(x_i))^2",
+                  values: [
+                    { label: "xᵢ", value: point.x.toFixed(2) },
+                    { label: "target yᵢ", value: point.y.toFixed(3) },
+                    { label: "prediction f(xᵢ)", value: fit.toFixed(3) },
+                    { label: "residual", value: (point.y - fit).toFixed(3) },
+                    { label: "squared residual", value: (residual ** 2).toFixed(3) },
+                  ],
+                  tryNext: "Change λ and watch both the prediction and this residual update.",
+                  accent: CORAL,
+                });
+              }}
             >
               <sphereGeometry args={[0.11, 18, 18]} />
               <meshStandardMaterial color={CORAL} />
@@ -703,11 +1059,13 @@ function Pulse({
 
 function NeuralScene({
   phase,
+  step,
   onSelect,
   reducedMotion,
 }: {
   phase: number;
-  onSelect: (label: string) => void;
+  step: number;
+  onSelect: SelectInspection;
   reducedMotion: boolean;
 }) {
   const layers = [
@@ -744,6 +1102,32 @@ function NeuralScene({
             transparent
             opacity={reverse ? 0.42 : 0.28}
             lineWidth={1}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+              const weight = Math.sin((index + 1) * 1.7) * 0.72;
+              onSelect({
+                id: `nn-edge-${index}`,
+                title: `Weight connection ${index + 1}`,
+                kind: reverse ? "Gradient path" : "Forward connection",
+                role: reverse
+                  ? "Backprop sends the upstream gradient through this edge and multiplies local derivatives to obtain ∂L/∂w."
+                  : "The source activation is multiplied by this weight and contributes to the destination neuron’s pre-activation z.",
+                context:
+                  step === 2
+                    ? "This edge is one factorized path in the chain rule. Shared intermediate gradients let backprop reuse work efficiently."
+                    : step === 3
+                      ? "After its gradient is known, this weight moves a small step opposite that gradient."
+                      : "During the forward pass, all incoming weighted activations are summed before the destination activation.",
+                math: reverse ? "\\frac{\\partial\\mathcal L}{\\partial w_{ij}}=\\delta_j a_i" : "z_j=\\sum_i w_{ij}a_i+b_j",
+                values: [
+                  { label: "from layer", value: String(edge.layerIndex + 1) },
+                  { label: "to layer", value: String(edge.layerIndex + 2) },
+                  { label: "example weight", value: weight.toFixed(3) },
+                ],
+                tryNext: phase < 2 ? "Select Backward to reverse the signal flow." : "Select Update to apply the computed gradient.",
+                accent: reverse ? CORAL : BLUE,
+              });
+            }}
           />
           {!reducedMotion && (
             <Pulse
@@ -768,13 +1152,38 @@ function NeuralScene({
           <mesh
             castShadow
             position={node.p}
-            onPointerDown={() =>
-              onSelect(
-                `Layer ${node.layerIndex + 1}, unit ${node.nodeIndex + 1} · ${
-                  reverse ? "gradient active" : "activation active"
-                }`,
-              )
-            }
+            onPointerDown={(event) => {
+              event.stopPropagation();
+              const activation = 1 / (1 + Math.exp(-((node.layerIndex + 1) * 0.45 - node.nodeIndex * 0.38)));
+              onSelect({
+                id: `nn-node-${node.layerIndex}-${node.nodeIndex}`,
+                title: `Layer ${node.layerIndex + 1}, unit ${node.nodeIndex + 1}`,
+                kind:
+                  node.layerIndex === 0
+                    ? "Input unit"
+                    : node.layerIndex === 3
+                      ? "Output unit"
+                      : "Hidden unit",
+                role:
+                  node.layerIndex === 0
+                    ? "This unit holds one input feature; it does not apply a learned activation."
+                    : "This unit adds its incoming weighted activations and bias, then applies the activation function.",
+                context: reverse
+                  ? "In the backward phase, this node combines downstream gradient contributions before sending credit farther left."
+                  : "In the forward phase, this activation becomes an input to every connected unit in the next layer.",
+                math: node.layerIndex === 0 ? "a^{(0)}=x" : "a^{(l)}=\\sigma(W^{(l)}a^{(l-1)}+b^{(l)})",
+                values: [
+                  { label: "layer", value: String(node.layerIndex + 1) },
+                  { label: "unit", value: String(node.nodeIndex + 1) },
+                  ...(node.layerIndex > 0
+                    ? [{ label: "example activation", value: activation.toFixed(3) }]
+                    : []),
+                  { label: "current signal", value: reverse ? "gradient ←" : "activation →" },
+                ],
+                tryNext: "Click a connecting edge to inspect the weight’s local forward and backward roles.",
+                accent: node.layerIndex === 3 ? CORAL : BLUE,
+              });
+            }}
           >
             <sphereGeometry args={[node.layerIndex === 3 ? 0.34 : 0.27, 28, 28]} />
             <meshStandardMaterial
@@ -818,6 +1227,7 @@ function ChapterScene({
       return (
         <RiskScene
           complexity={params.complexity}
+          step={step}
           onSelect={onObjectSelect}
         />
       );
@@ -830,17 +1240,18 @@ function ChapterScene({
         />
       );
     case 3:
-      return <SVMScene params={params} soft={false} onSelect={onObjectSelect} />;
+      return <SVMScene params={params} soft={false} step={step} onSelect={onObjectSelect} />;
     case 4:
-      return <SVMScene params={params} soft onSelect={onObjectSelect} />;
+      return <SVMScene params={params} soft step={step} onSelect={onObjectSelect} />;
     case 5:
-      return <KernelScene params={params} onSelect={onObjectSelect} />;
+      return <KernelScene params={params} step={step} onSelect={onObjectSelect} />;
     case 6:
-      return <ERMScene params={params} onSelect={onObjectSelect} />;
+      return <ERMScene params={params} step={step} onSelect={onObjectSelect} />;
     default:
       return (
         <NeuralScene
           phase={params.nnPhase}
+          step={step}
           onSelect={onObjectSelect}
           reducedMotion={reducedMotion}
         />
@@ -849,7 +1260,7 @@ function ChapterScene({
 }
 
 export default function SceneCanvas(props: SceneCanvasProps) {
-  const [selected, setSelected] = useState("Select an object to inspect it");
+  const [selected, setSelected] = useState<SceneInspection | null>(null);
   return (
     <div className="canvas-wrap">
       <Canvas
@@ -857,15 +1268,15 @@ export default function SceneCanvas(props: SceneCanvasProps) {
         dpr={[1, 1.6]}
         camera={{ position: [6.6, 5.4, 8.6], fov: 37, near: 0.1, far: 50 }}
         gl={{ antialias: true, powerPreference: "high-performance" }}
-        onPointerMissed={() => setSelected("Select an object to inspect it")}
+        onPointerMissed={() => setSelected(null)}
       >
         <LabStage />
         <Suspense fallback={null}>
           <ChapterScene
             {...props}
-            onObjectSelect={(label) => {
-              setSelected(label);
-              props.onObjectSelect(label);
+            onObjectSelect={(inspection) => {
+              setSelected(inspection);
+              props.onObjectSelect(inspection);
             }}
           />
         </Suspense>
@@ -883,7 +1294,7 @@ export default function SceneCanvas(props: SceneCanvasProps) {
       </Canvas>
       <div className="canvas-inspector" aria-live="polite">
         <span className="pulse-dot" />
-        {selected}
+        {selected ? inspectionHeadline(selected) : "Click any point, plane, wall, node, or curve"}
       </div>
       <div className="canvas-controls" aria-hidden="true">
         Drag to orbit · Scroll to zoom

@@ -14,9 +14,11 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { BlockMath } from "react-katex";
+import { InlineMath } from "react-katex";
+import FormulaWorkbench from "@/components/FormulaWorkbench";
 import SceneCanvas, { SceneParameters } from "@/components/SceneCanvas";
 import { chapters } from "@/lib/chapters";
+import type { SceneInspection } from "@/lib/inspection";
 import { entropy, informationGain } from "@/lib/math";
 import { useProgressStore } from "@/lib/store";
 
@@ -383,15 +385,18 @@ export default function MLAtlas() {
   const [showIntro, setShowIntro] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [showGlossary, setShowGlossary] = useState(false);
-  const [inspection, setInspection] = useState("");
+  const [inspection, setInspection] = useState<SceneInspection | null>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => setMounted(true), []);
   useEffect(() => {
     setStep(0);
     setAnswer(null);
-    setInspection("");
+    setInspection(null);
   }, [currentChapter]);
+  useEffect(() => {
+    setInspection(null);
+  }, [step]);
 
   const chapter = chapters[currentChapter];
   const lesson = chapter.steps[step];
@@ -416,6 +421,36 @@ export default function MLAtlas() {
     setAnswer(index);
     if (index === chapter.checkpoint.correct) {
       completeChapter(chapter.id, currentChapter);
+    }
+  };
+
+  const nudgeLiveExample = () => {
+    if (currentChapter === 0) {
+      setParam("split", params.split === 0 ? 1 : 0);
+    } else if (currentChapter === 1) {
+      setParam("complexity", params.complexity >= 8 ? 1 : params.complexity + 1);
+    } else if (currentChapter === 2) {
+      if (step === 1) setParam("sigmoid", !params.sigmoid);
+      else if (step >= 2) setParam("updateCount", params.updateCount + 1);
+      else setParam("angle", params.angle >= 1.2 ? -0.8 : params.angle + 0.25);
+    } else if (currentChapter === 3) {
+      setParam("margin", params.margin >= 2.7 ? 0.8 : params.margin + 0.3);
+    } else if (currentChapter === 4) {
+      if (step === 1 || step === 2) {
+        setParam("lossMode", params.lossMode === "hinge" ? "zero-one" : "hinge");
+      } else {
+        setParam("c", params.c >= 4.5 ? 0.5 : params.c + 0.5);
+      }
+    } else if (currentChapter === 5) {
+      const kernels: SceneParameters["kernel"][] = ["linear", "polynomial", "rbf"];
+      setParam("kernel", kernels[(kernels.indexOf(params.kernel) + 1) % kernels.length]);
+    } else if (currentChapter === 6) {
+      setParam(
+        "regularization",
+        params.regularization >= 0.9 ? 0.1 : Number((params.regularization + 0.15).toFixed(2)),
+      );
+    } else {
+      setParam("nnPhase", (params.nnPhase + 1) % 4);
     }
   };
 
@@ -551,9 +586,15 @@ export default function MLAtlas() {
           <h2>{lesson.title}</h2>
           <p className="lesson-body">{lesson.body}</p>
           {lesson.formula && (
-            <div className="formula-card">
-              <BlockMath math={lesson.formula} />
-            </div>
+            <FormulaWorkbench
+              chapter={currentChapter}
+              step={step}
+              formula={lesson.formula}
+              params={params}
+              chapterTitle={chapter.title}
+              onInspect={setInspection}
+              onExperiment={nudgeLiveExample}
+            />
           )}
           {lesson.callout && (
             <div className="lesson-callout">
@@ -563,8 +604,35 @@ export default function MLAtlas() {
           )}
           {inspection && (
             <div className="inspection-note">
-              <span>Inspection</span>
-              <p>{inspection}</p>
+              <div className="inspection-heading">
+                <span>{inspection.kind}</span>
+                <button
+                  type="button"
+                  onClick={() => setInspection(null)}
+                  aria-label="Close inspection"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+              <h3>{inspection.title}</h3>
+              <p>{inspection.role}</p>
+              {inspection.math && (
+                <div className="inspection-math">
+                  <InlineMath math={inspection.math} />
+                </div>
+              )}
+              {inspection.values && inspection.values.length > 0 && (
+                <dl>
+                  {inspection.values.map((item) => (
+                    <div key={item.label}>
+                      <dt>{item.label}</dt>
+                      <dd>{item.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+              <p className="inspection-context">{inspection.context}</p>
+              {inspection.tryNext && <small>Try: {inspection.tryNext}</small>}
             </div>
           )}
 
