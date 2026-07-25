@@ -36,6 +36,7 @@ const defaultParameters: SceneParameters = {
   kernel: "polynomial",
   lift: 0.8,
   gamma: 0.7,
+  kernelReplay: 0,
   regularization: 0.45,
   nnPhase: 0,
 };
@@ -352,7 +353,7 @@ function SceneControls({
           onChange={(value) => setParam("kernel", value)}
         />
         <RangeControl
-          label="Feature-space lift"
+          label="Feature-map height"
           value={params.lift}
           min={0}
           max={1}
@@ -369,6 +370,34 @@ function SceneControls({
             onChange={(value) => setParam("gamma", value)}
           />
         )}
+        <button
+          type="button"
+          className="lab-action"
+          onClick={() => setParam("kernelReplay", params.kernelReplay + 1)}
+        >
+          Replay input → feature space
+          <RotateCcw size={15} />
+        </button>
+        <div className="update-explainer" aria-live="polite">
+          <span>What the animation proves</span>
+          <strong>
+            {params.kernel === "linear"
+              ? "No new space, so the rings stay inseparable"
+              : "A nonlinear feature space makes a linear plane possible"}
+          </strong>
+          <p>
+            The original x₁,x₂ data forms concentric rings, so no straight line
+            can split the classes.{" "}
+            {params.kernel === "linear"
+              ? "Because φ(x)=x, a linear kernel cannot repair this example."
+              : "The new feature coordinate exposes radius, placing the inner and outer rings at different heights."}
+          </p>
+          <small>
+            The kernel trick evaluates k(x,z)=⟨φ(x),φ(z)⟩ without explicitly
+            constructing every coordinate of φ(x). The 3D lift is an
+            understandable slice of that feature space.
+          </small>
+        </div>
       </>
     );
   }

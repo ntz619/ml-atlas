@@ -10,7 +10,7 @@ import {
   RoundedBox,
 } from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Suspense, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import * as THREE from "three";
 import type { SceneInspection } from "@/lib/inspection";
@@ -31,6 +31,7 @@ export type SceneParameters = {
   kernel: "linear" | "polynomial" | "rbf";
   lift: number;
   gamma: number;
+  kernelReplay: number;
   regularization: number;
   nnPhase: number;
 };
@@ -1334,10 +1335,12 @@ function KernelScene({
   params,
   step,
   onSelect,
+  reducedMotion,
 }: {
   params: SceneParameters;
   step: number;
   onSelect: SelectInspection;
+  reducedMotion: boolean;
 }) {
   const points = useMemo(
     () =>
@@ -1355,35 +1358,233 @@ function KernelScene({
     [],
   );
 
-  const heightFor = (x: number, z: number) => {
+  const [animationProgress, setAnimationProgress] = useState(
+    reducedMotion ? 1 : 0,
+  );
+  const animationStart = useRef<number | null>(null);
+  const isAnimating = useRef(!reducedMotion);
+  const [hoveredSeparator, setHoveredSeparator] = useState(false);
+  const [hoveredFailedBoundary, setHoveredFailedBoundary] = useState(false);
+
+  useEffect(() => {
+    if (reducedMotion) {
+      isAnimating.current = false;
+      animationStart.current = null;
+      setAnimationProgress(1);
+      return;
+    }
+
+    animationStart.current = null;
+    isAnimating.current = true;
+    setAnimationProgress(0);
+  }, [params.kernel, params.kernelReplay, reducedMotion]);
+
+  useFrame(({ clock }) => {
+    if (!isAnimating.current) return;
+    if (animationStart.current === null) {
+      animationStart.current = clock.elapsedTime;
+    }
+
+    const next = Math.min(
+      1,
+      (clock.elapsedTime - animationStart.current) / 4.8,
+    );
+    setAnimationProgress(next);
+    if (next >= 1) isAnimating.current = false;
+  });
+
+  const liftProgress =
+    animationProgress <= 0.26
+      ? 0
+      : animationProgress >= 0.82
+        ? 1
+        : (() => {
+            const t = (animationProgress - 0.26) / 0.56;
+            return t * t * (3 - 2 * t);
+          })();
+
+  const finalHeightFor = (x: number, z: number) => {
     if (params.kernel === "linear") return 0;
     const radiusSquared = x * x + z * z;
     if (params.kernel === "polynomial") return radiusSquared * 0.28 * params.lift;
     return (1 - Math.exp(-params.gamma * radiusSquared)) * 2.2 * params.lift;
   };
-  const [hoveredSeparator, setHoveredSeparator] = useState(false);
+
+  const heightFor = (x: number, z: number) =>
+    finalHeightFor(x, z) * liftProgress;
+  const separatorHeight = 1.35 * params.lift * liftProgress;
+  const isInputStage = animationProgress < 0.26;
+  const isMappingStage =
+    animationProgress >= 0.26 && animationProgress < 0.82;
+  const nonlinearKernel = params.kernel !== "linear";
+  const mappingWorks = nonlinearKernel && params.lift > 0.15;
+
+  const guide = isInputStage
+    ? {
+        title: "1 · Input space: no straight line works",
+        body: "The blue class is an inner ring and the coral class is an outer ring. Any straight boundary leaves examples from both classes on each side.",
+      }
+    : isMappingStage
+      ? {
+          title: "2 · Create a nonlinear feature space",
+          body: mappingWorks
+            ? `The ${params.kernel} map keeps x₁ and x₂ fixed while adding a nonlinear feature coordinate. Radius becomes visible as height.`
+            : nonlinearKernel
+              ? "The nonlinear map is selected, but the displayed feature-map height is zero. Raise it to reveal the new coordinate."
+              : "The linear map is φ(x)=x. It adds no nonlinear coordinate, so the points cannot leave the inseparable input geometry.",
+        }
+      : mappingWorks
+        ? {
+            title: "3 · Feature space: a plane now works",
+            body: "Inner points are low and outer points are high. The white plane is linear in φ-space, even though its boundary is a circle back in input space.",
+          }
+        : nonlinearKernel
+          ? {
+              title: "3 · Zero lift: still the input-space view",
+              body: "The feature-map height is set too low to reveal the separating coordinate. Raise the control, then replay the mapping.",
+            }
+        : {
+            title: "3 · Linear kernel: still not separable",
+            body: "Nothing moved because φ(x)=x. The concentric classes remain nonlinearly arranged, so a linear SVM still cannot separate them.",
+          };
 
   return (
     <group position={[0, -0.72, 0]}>
       <SceneGuide
         position={[0, 3.45, -2.25]}
-        title="The kernel changes geometry"
-        body={`Floor positions are the original inputs. Vertical height is the ${params.kernel} feature map. A flat plane above can mean a curved boundary below.`}
+        title={guide.title}
+        body={guide.body}
         chips={[
-          { label: "floor · input space x", tone: INK },
-          { label: "vertical stems · φ(x)", tone: GOLD },
-          { label: "white disc · linear separator", tone: MINT },
+          { label: "floor · original x-space", tone: INK },
+          {
+            label: nonlinearKernel
+              ? "vertical motion · nonlinear φ(x)"
+              : "linear φ(x)=x · no lift",
+            tone: GOLD,
+          },
+          {
+            label: mappingWorks
+              ? "white plane · linear separator"
+              : "coral line · failed separator",
+            tone: mappingWorks ? MINT : CORAL,
+          },
         ]}
       />
       <SceneAxes
         origin={[-3.25, 0, 2.55]}
-        xLabel="original feature x₁"
-        yLabel="mapped feature φ₃(x)"
-        zLabel="original feature x₂"
+        xLabel="input feature x₁"
+        yLabel="new feature coordinate φ₃(x)"
+        zLabel="input feature x₂"
         yLength={3}
       />
+      <ObjectTag
+        position={[-2.5, 0.32, -2.45]}
+        label="INPUT SPACE · x ∈ ℝ²"
+        detail="concentric rings · not linearly separable"
+        tone={CORAL}
+      />
+      {mappingWorks && liftProgress > 0.12 && (
+        <ObjectTag
+          position={[2.45, 2.65 * liftProgress, 2.25]}
+          label="FEATURE SPACE · φ(x)"
+          detail={
+            liftProgress < 0.92
+              ? "a new coordinate is being introduced"
+              : "the classes are linearly separable here"
+          }
+          tone={MINT}
+        />
+      )}
+      {!nonlinearKernel && !isInputStage && (
+        <ObjectTag
+          position={[2.25, 0.48, 2.25]}
+          label="φ(x)=x"
+          detail="same space · same inseparable geometry"
+          tone={GOLD}
+        />
+      )}
+
+      <mesh rotation-x={-Math.PI / 2} position={[0, 0.012, 0]}>
+        <ringGeometry args={[0.72, 1.2, 64]} />
+        <meshBasicMaterial
+          color={BLUE}
+          transparent
+          opacity={0.1 + (1 - liftProgress) * 0.08}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      <mesh rotation-x={-Math.PI / 2} position={[0, 0.014, 0]}>
+        <ringGeometry args={[1.95, 2.68, 64]} />
+        <meshBasicMaterial
+          color={CORAL}
+          transparent
+          opacity={0.1 + (1 - liftProgress) * 0.08}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+
+      <mesh
+        position={[0, 0.055, 0]}
+        rotation={[0, 0.42, 0]}
+        onPointerEnter={(event) => {
+          event.stopPropagation();
+          setHoveredFailedBoundary(true);
+          document.body.style.cursor = "help";
+        }}
+        onPointerLeave={() => {
+          setHoveredFailedBoundary(false);
+          document.body.style.cursor = "";
+        }}
+        onPointerDown={(event) => {
+          event.stopPropagation();
+          onSelect({
+            id: "kernel-failed-input-boundary",
+            title: "Failed input-space separator",
+            kind: "Straight line in the original feature space",
+            role: "This line demonstrates the problem: both the inner blue ring and the outer coral ring occur on both sides of every straight line.",
+            context: "A linear classifier can only divide the input plane into two half-spaces. Concentric classes require a closed, curved boundary instead.",
+            math: "w^\\top x+b=0",
+            values: [
+              { label: "space", value: "input x ∈ ℝ²" },
+              { label: "result", value: "not linearly separable" },
+            ],
+            tryNext:
+              "Replay a polynomial or RBF mapping and watch the same points become separable by a plane.",
+            accent: CORAL,
+          });
+        }}
+      >
+        <boxGeometry args={[0.045, 0.055, 6]} />
+        <meshStandardMaterial
+          color={CORAL}
+          transparent
+          opacity={nonlinearKernel ? 0.18 + (1 - liftProgress) * 0.62 : 0.8}
+        />
+      </mesh>
+      {hoveredFailedBoundary ? (
+        <HoverAnnotation
+          position={[-1.8, 0.62, 1.6]}
+          tone={CORAL}
+          info={{
+            eyebrow: "Original-space attempt",
+            title: "This straight boundary fails",
+            body: "Walk along either side of the line: you still find blue inner-ring points and coral outer-ring points. No rotation or shift fixes that.",
+            formula: "wᵀx + b = 0",
+            values: ["blue and coral on both sides", "input space · not separable"],
+          }}
+        />
+      ) : (
+        <ObjectTag
+          position={[-1.9, 0.28, 1.55]}
+          label="candidate straight boundary · fails"
+          detail="hover · why no line can solve the rings"
+          tone={CORAL}
+        />
+      )}
+
       {points.map((point, index) => {
         const height = heightFor(point.x, point.z);
+        const finalHeight = finalHeightFor(point.x, point.z);
         return (
           <DataPoint
             key={index}
@@ -1393,7 +1594,9 @@ function KernelScene({
             hoverInfo={{
               eyebrow: "Same sample, new coordinates",
               title: `${point.label > 0 ? "Outer" : "Inner"} point ${index + 1}`,
-              body: `Its floor coordinates do not change. The ${params.kernel} map adds a height of ${height.toFixed(2)}, exposing the ring structure to a linear separator.`,
+              body: nonlinearKernel
+                ? `Its x₁,x₂ floor coordinates stay fixed while the displayed feature coordinate rises to ${finalHeight.toFixed(2)}. This makes radius available to a linear separator.`
+                : "A linear kernel uses φ(x)=x, so this sample receives no new coordinate and remains in the inseparable ring pattern.",
               formula:
                 params.kernel === "linear"
                   ? "φ(x) = x"
@@ -1411,10 +1614,14 @@ function KernelScene({
                 id: `kernel-point-${index}`,
                 title: `${point.label === 1 ? "Outer-ring" : "Inner-ring"} sample`,
                 kind: "Mapped training example",
-                role: `The input coordinates stay fixed on the floor; the ${params.kernel} feature map gives this point a height of ${height.toFixed(2)}.`,
+                role: nonlinearKernel
+                  ? `The input coordinates stay fixed on the floor; this 3D teaching view gives the point a feature height of ${finalHeight.toFixed(2)}.`
+                  : "The linear feature map leaves this point exactly in its original coordinates.",
                 context:
                   step === 0
-                    ? "The rings are not linearly separable on the floor, but their different radii become separable after lifting."
+                    ? nonlinearKernel
+                      ? "The rings are not linearly separable on the floor, but their different radii become separable after lifting."
+                      : "The rings are not linearly separable, and the linear kernel cannot change that geometry."
                     : step === 3
                       ? "In the representer expansion, this training point can center one kernel basis function with coefficient αᵢ."
                       : "The SVM dual compares this point with others through kernel similarities instead of explicit mapped coordinates.",
@@ -1422,19 +1629,20 @@ function KernelScene({
                 values: [
                   { label: "input x", value: `[${point.x.toFixed(2)}, ${point.z.toFixed(2)}]` },
                   { label: "radius", value: point.radius.toFixed(2) },
-                  { label: "φ-height", value: height.toFixed(2) },
+                  { label: "final φ-height", value: finalHeight.toFixed(2) },
                   { label: "class", value: point.label === 1 ? "outer +1" : "inner −1" },
                 ],
-                tryNext: "Switch kernels and compare how the same fixed input moves in feature space.",
+                tryNext:
+                  "Replay the mapping and track this sample from x-space into feature space.",
                 accent: point.label === 1 ? CORAL : BLUE,
               })
             }
           />
         );
       })}
-      {params.lift > 0.15 && params.kernel !== "linear" && (
+      {params.lift > 0.15 && nonlinearKernel && liftProgress > 0.5 && (
         <mesh
-          position={[0, 1.35 * params.lift, 0]}
+          position={[0, separatorHeight, 0]}
           onPointerEnter={(event) => {
             event.stopPropagation();
             setHoveredSeparator(true);
@@ -1466,14 +1674,14 @@ function KernelScene({
           <meshStandardMaterial
             color="#ffffff"
             transparent
-            opacity={0.42}
+            opacity={0.18 + 0.28 * liftProgress}
           />
         </mesh>
       )}
-      {params.lift > 0.15 && params.kernel !== "linear" && (
+      {params.lift > 0.15 && nonlinearKernel && liftProgress > 0.5 && (
         hoveredSeparator ? (
           <HoverAnnotation
-            position={[0, 1.35 * params.lift + 0.45, 0]}
+            position={[0, separatorHeight + 0.45, 0]}
             tone={MINT}
             info={{
               eyebrow: "Linear after mapping",
@@ -1485,9 +1693,9 @@ function KernelScene({
           />
         ) : (
           <ObjectTag
-            position={[0, 1.35 * params.lift + 0.2, 0]}
-            label="linear separator in φ-space"
-            detail="hover · why this helps"
+            position={[0, separatorHeight + 0.2, 0]}
+            label="linear plane in feature space · succeeds"
+            detail="the equivalent input boundary is a circle"
             tone={MINT}
           />
         )
@@ -2163,7 +2371,14 @@ function ChapterScene({
     case 4:
       return <SVMScene params={params} soft step={step} onSelect={onObjectSelect} />;
     case 5:
-      return <KernelScene params={params} step={step} onSelect={onObjectSelect} />;
+      return (
+        <KernelScene
+          params={params}
+          step={step}
+          onSelect={onObjectSelect}
+          reducedMotion={reducedMotion}
+        />
+      );
     case 6:
       return <ERMScene params={params} step={step} onSelect={onObjectSelect} />;
     default:
